@@ -204,6 +204,57 @@ def train(args):
     print("Image batch:", images.shape)
     print("Label batch:", labels.shape)
 
+    weights = SqueezeNet1_1_Weights.DEFAULT
+
+    model = squeezenet1_1(weights=weights)
+
+    # Freeze the pretrained feature extractor initially.
+    for parameter in model.features.parameters():
+        parameter.requires_grad = False
+
+    # A new classifier produces one logit per EuroSAT class.
+    # No softmax: CrossEntropyLoss works directly with logits.
+    model.classifier = nn.Sequential(
+        nn.Dropout(p=0.5),
+        nn.Conv2d(
+            in_channels=512,
+            out_channels=NUM_CLASSES,
+            kernel_size=1
+        ),
+        nn.AdaptiveAvgPool2d((1, 1))
+    )
+
+    nn.init.normal_(
+        model.classifier[1].weight,
+        mean=0.0,
+        std=0.01
+    )
+    nn.init.zeros_(model.classifier[1].bias)
+
+    model.num_classes = NUM_CLASSES
+    model = model.to(device)
+
+
+    def parameter_counts(model):
+        total = sum(p.numel() for p in model.parameters())
+        trainable = sum(
+            p.numel() for p in model.parameters()
+            if p.requires_grad
+        )
+        return total, trainable
+
+
+    total, trainable = parameter_counts(model)
+
+    print(f"Total parameters: {total:,}")
+    print(f"Initially trainable parameters: {trainable:,}")
+
+    with torch.no_grad():
+        output = model(images[:2].to(device))
+
+    assert output.shape == (2, NUM_CLASSES)
+    print("Output shape:", output.shape)
+
 
 def main():
     train(parse_args())
