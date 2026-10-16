@@ -97,6 +97,15 @@ def train(args):
     print("PyTorch:", torch.__version__)
     print("Torchvision:", torchvision.__version__)
 
+    from eurosat_data import load_splits, validate_images
+
+    rows, class_names = load_splits(args.splits, args.classes)
+    manifest = pd.DataFrame(rows)
+    NUM_CLASSES = len(class_names)
+    print(manifest["split"].value_counts())
+    print("Classes:", class_names)
+
+
 
 def main():
     train(parse_args())
