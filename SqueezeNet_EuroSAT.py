@@ -255,6 +255,109 @@ def train(args):
     assert output.shape == (2, NUM_CLASSES)
     print("Output shape:", output.shape)
 
+    criterion = nn.CrossEntropyLoss()
+
+    history = []
+    best_val_loss = float("inf")
+    BEST_PATH = OUTPUT_DIR / "squeezenet_best_state.pt"
+
+
+    def run_epoch(loader, optimizer=None):
+        training = optimizer is not None
+        model.train(training)
+
+        total_loss = 0.0
+        total_correct = 0
+        total_samples = 0
+
+        for images, labels in tqdm(
+            loader,
+            leave=False,
+            desc="Train" if training else "Validation"
+        ):
+            images = images.to(device, non_blocking=True)
+            labels = labels.to(device, non_blocking=True)
+
+            if training:
+                optimizer.zero_grad(set_to_none=True)
+
+            with torch.set_grad_enabled(training):
+                logits = model(images)
+                loss = criterion(logits, labels)
+
+                if training:
+                    loss.backward()
+                    optimizer.step()
+
+            batch_size = labels.size(0)
+
+            total_loss += loss.item() * batch_size
+            total_correct += (
+                logits.argmax(dim=1) == labels
+            ).sum().item()
+            total_samples += batch_size
+
+        return (
+            total_loss / total_samples,
+            total_correct / total_samples
+        )
+
+
+    def fit_stage(stage_name, epochs, optimizer):
+        nonlocal best_val_loss
+
+        for _ in range(epochs):
+            epoch = len(history) + 1
+
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+
+            start = time.perf_counter()
+
+            train_loss, train_acc = run_epoch(
+                train_loader, optimizer
+            )
+            val_loss, val_acc = run_epoch(val_loader)
+
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+
+            elapsed = time.perf_counter() - start
+
+            history.append({
+                "epoch": epoch,
+                "stage": stage_name,
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "train_accuracy": train_acc,
+                "val_accuracy": val_acc,
+                "epoch_seconds_including_validation": elapsed
+            })
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+
+                # Save weights only, without optimizer state.
+                state = {
+                    key: value.detach().cpu().clone()
+                    for key, value in model.state_dict().items()
+                }
+                torch.save(state, BEST_PATH)
+
+            pd.DataFrame(history).to_csv(
+                OUTPUT_DIR / "training_history.csv",
+                index=False
+            )
+
+            print(
+                f"Epoch {epoch:02d} | {stage_name} | "
+                f"train loss={train_loss:.4f}, "
+                f"train acc={train_acc:.4f} | "
+                f"val loss={val_loss:.4f}, "
+                f"val acc={val_acc:.4f} | "
+                f"{elapsed:.1f}s"
+            )
+
 
 def main():
     train(parse_args())
