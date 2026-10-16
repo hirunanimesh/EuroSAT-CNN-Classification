@@ -1,0 +1,3 @@
+* text=auto eol=lf
+eurosat_splits.csv -text
+eurosat_classes.json -text
