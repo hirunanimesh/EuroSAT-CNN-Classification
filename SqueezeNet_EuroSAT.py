@@ -38,6 +38,34 @@ def parse_args():
     return parser.parse_args()
 
 
+class EuroSATDataset:
+    def __init__(self, manifest, split, root, transform):
+        self.frame = (
+            manifest[manifest["split"] == split]
+            .reset_index(drop=True)
+        )
+        self.root = Path(root)
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.frame)
+
+    def __getitem__(self, index):
+        from PIL import Image
+
+        row = self.frame.iloc[index]
+
+        with Image.open(
+            self.root / row["relative_path"]
+        ) as image:
+            image = image.convert("RGB")
+            image = self.transform(image)
+
+        label = int(row["label"])
+        return image, label
+
+
+
 def train(args):
     import json
     import time
@@ -105,6 +133,76 @@ def train(args):
     print(manifest["split"].value_counts())
     print("Classes:", class_names)
 
+
+    if args.data_dir is None:
+        import kagglehub
+        dataset_path = kagglehub.dataset_download("apollo2506/eurosat-dataset")
+        DATA_DIR = Path(dataset_path) / "EuroSAT"
+    else:
+        DATA_DIR = args.data_dir
+
+    validate_images(rows, DATA_DIR)
+    print("Dataset directory:", DATA_DIR)
+    print("All manifest images found.")
+
+    IMAGE_SIZE = (64, 64)
+    BATCH_SIZE = args.batch_size
+
+    # Preserve the notebook's preprocessing without augmentation.
+    image_transform = transforms.Compose([
+        transforms.Resize(
+            IMAGE_SIZE,
+            interpolation=transforms.InterpolationMode.BILINEAR
+        ),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.485, 0.456, 0.406],
+            std=[0.229, 0.224, 0.225]
+        )
+    ])
+
+
+    train_dataset = EuroSATDataset(
+        manifest, "train", DATA_DIR, image_transform
+    )
+    val_dataset = EuroSATDataset(
+        manifest, "val", DATA_DIR, image_transform
+    )
+    test_dataset = EuroSATDataset(
+        manifest, "test", DATA_DIR, image_transform
+    )
+
+    generator = torch.Generator().manual_seed(SEED)
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        generator=generator,
+        num_workers=args.num_workers,
+        pin_memory=(device.type == "cuda")
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=(device.type == "cuda")
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        num_workers=args.num_workers,
+        pin_memory=(device.type == "cuda")
+    )
+
+    images, labels = next(iter(train_loader))
+
+    print("Image batch:", images.shape)
+    print("Label batch:", labels.shape)
 
 
 def main():
