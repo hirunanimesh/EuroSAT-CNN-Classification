@@ -2,8 +2,6 @@ __pycache__/
 *.py[cod]
 .venv/
 .env
-.automation-local/
-.commit-queue.json
 data/
 squeezenet_results/
 *.pt
