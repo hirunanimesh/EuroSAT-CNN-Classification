@@ -533,6 +533,107 @@ def train(args):
         index=False
     )
 
+    cm = confusion_matrix(
+        y_true,
+        y_pred,
+        labels=list(range(NUM_CLASSES))
+    )
+
+    fig, ax = plt.subplots(figsize=(10, 9))
+
+    display = ConfusionMatrixDisplay(
+        confusion_matrix=cm,
+        display_labels=class_names
+    )
+
+    display.plot(
+        ax=ax,
+        cmap="Blues",
+        xticks_rotation=90,
+        colorbar=False
+    )
+
+    ax.set_title("SqueezeNet — EuroSAT test confusion matrix")
+
+    plt.tight_layout()
+    plt.savefig(
+        OUTPUT_DIR / "confusion_matrix.png",
+        dpi=200,
+        bbox_inches="tight"
+    )
+    if args.show_plots:
+        plt.show()
+    else:
+        plt.close(fig)
+
+    pd.DataFrame(
+        cm,
+        index=class_names,
+        columns=class_names
+    ).to_csv(OUTPUT_DIR / "confusion_matrix.csv")
+    total_params, trainable_params = parameter_counts(model)
+
+    file_bytes = BEST_PATH.stat().st_size
+
+    # Decimal MB, explicitly labelled.
+    model_size_mb = file_bytes / 1_000_000
+
+    # Theoretical float32 parameter storage.
+    fp32_weights_mb = total_params * 4 / 1_000_000
+
+    import hashlib
+
+    summary = {
+        "seed": SEED,
+        "split_manifest_sha256": hashlib.sha256(args.splits.read_bytes()).hexdigest(),
+        "class_mapping_sha256": hashlib.sha256(args.classes.read_bytes()).hexdigest(),
+        "model": "SqueezeNet 1.1",
+        "pretrained_weights": str(weights),
+        "dataset": "EuroSAT RGB",
+        "input_resolution": "64x64",
+        "total_parameters": total_params,
+        "trainable_parameters_during_fine_tuning": trainable_params,
+        "weights_checkpoint_size_MB": model_size_mb,
+        "estimated_FP32_parameter_storage_MB": fp32_weights_mb,
+        "test_loss": test_loss,
+        "test_accuracy": test_accuracy,
+        "macro_precision": report["macro avg"]["precision"],
+        "macro_recall": report["macro avg"]["recall"],
+        "macro_f1": report["macro avg"]["f1-score"],
+        "training_epochs": len(history_df),
+        "selected_epoch": int(best_row["epoch"]),
+        "mean_epoch_seconds_including_validation": float(
+            history_df[
+                "epoch_seconds_including_validation"
+            ].mean()
+        )
+    }
+
+
+
+    summary_df = pd.DataFrame([summary])
+    print(summary_df.transpose().to_string(header=False))
+
+    summary_df.to_csv(
+        OUTPUT_DIR / "model_summary.csv",
+        index=False
+    )
+
+    with open(OUTPUT_DIR / "model_summary.json", "w") as f:
+        json.dump(summary, f, indent=2)
+
+    with open(OUTPUT_DIR / "class_names.json", "w") as f:
+        json.dump(class_names, f, indent=2)
+
+    manifest.to_csv(
+        OUTPUT_DIR / "eurosat_splits.csv",
+        index=False
+    )
+
+    print(f"Total parameters: {total_params:,}")
+    print(f"Checkpoint size: {model_size_mb:.3f} MB")
+    print(f"Test accuracy: {test_accuracy * 100:.2f}%")
+
 
 def main():
     train(parse_args())
