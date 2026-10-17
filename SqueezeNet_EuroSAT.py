@@ -369,6 +369,42 @@ def train(args):
         optimizer=head_optimizer
     )
 
+    # Start fine-tuning from the best classifier-stage checkpoint.
+    model.load_state_dict(
+        torch.load(
+            BEST_PATH,
+            map_location=device,
+            weights_only=True
+        )
+    )
+
+    for parameter in model.features.parameters():
+        parameter.requires_grad = True
+
+    fine_tune_optimizer = torch.optim.Adam(
+        [
+            {
+                "params": model.features.parameters(),
+                "lr": 1e-5
+            },
+            {
+                "params": model.classifier.parameters(),
+                "lr": 1e-4
+            }
+        ]
+    )
+
+    total, trainable = parameter_counts(model)
+
+    print(f"Total parameters: {total:,}")
+    print(f"Trainable during fine-tuning: {trainable:,}")
+
+    fit_stage(
+        stage_name="fine_tuning",
+        epochs=args.fine_tune_epochs,
+        optimizer=fine_tune_optimizer
+    )
+
 
 def main():
     train(parse_args())
