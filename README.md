@@ -1,59 +1,160 @@
-# EuroSAT CNN classification
+# EuroSAT image classification with SqueezeNet
 
-Standalone SqueezeNet 1.1 training and evaluation, converted from
-`SqueezeNet_EuroSAT.ipynb`, with fixed splits shared across future models.
+This project teaches a SqueezeNet 1.1 neural network to identify the type of land
+shown in a satellite image. It uses the EuroSAT RGB dataset, which contains
+27,000 colour images across 10 classes, such as forests, rivers, residential
+areas, and farmland.
 
-## Shared splits for every model
+You run one Python script to train the model, test it, and save the results.
 
-`eurosat_classes.json` defines the label order. `eurosat_splits.csv` preserves the
-original row order and assigns all 27,000 RGB images to 18,900 training, 4,050
-validation, and 4,050 test examples. These two supplied files are copied unchanged.
-Use `eurosat_data.load_splits()` in future models: it checks counts, duplicate paths,
-labels, class folders, and class coverage. Never regenerate or randomly split these
-files when comparing models. Select checkpoints using validation data only.
+## What each file does
 
-## Development checks
+| File | Purpose | How it is used |
+| --- | --- | --- |
+| `SqueezeNet_EuroSAT.py` | The main program. Loads images, prepares the model, trains it, evaluates it, and saves results. | You run this file from the terminal. |
+| `eurosat_data.py` | Provides functions that check the dataset lists and confirm that the image files exist. | Imported by the main program and the tests. You do not need to run it separately. |
+| `eurosat_splits.csv` | Lists each image's relative path, class number, and assigned group: training, validation, or testing. | Read by `load_splits()` in `eurosat_data.py`. |
+| `eurosat_classes.json` | Lists the 10 class names in label order. Position 0 means `AnnualCrop`, position 1 means `Forest`, and so on. | Read by `load_splits()` to match class numbers to names. |
+| `requirements.txt` | Lists the Python libraries needed, including PyTorch, Torchvision, Pandas, and Matplotlib. | Read by `pip` when you install dependencies. |
+| `tests/test_splits.py` | Checks the shared data helper. Tests cover image counts, labels, duplicate paths, invalid paths, class order, and missing images. | Run separately with Python's test runner. |
+| `.gitignore` | Tells Git to leave out local files such as downloaded data, saved weights, results, and Python cache files. | Used automatically by Git. |
+| `.gitattributes` | Controls how Git handles line endings and preserves the original CSV and JSON data files. | Used automatically by Git. |
+| `README.md` | Explains the project, commands, files, and execution flow. | Read this to understand and run the project. |
 
-Run `python -m unittest discover -s tests -v`. These checks validate split integrity
-without training or downloading the dataset.
+The CSV and JSON files contain information about the images; the image files
+themselves must be downloaded or supplied separately.
 
-## Run SqueezeNet
+## How the images are divided
 
-Use Python 3.11 or 3.12 in a virtual environment, then install the dependencies:
+| Group | Images | Purpose |
+| --- | ---: | --- |
+| Training (`train`) | 18,900 | Used to teach the model. |
+| Validation (`val`) | 4,050 | Used after each training round to check progress and choose the best saved model. |
+| Testing (`test`) | 4,050 | Used once after training to measure the selected model's performance. |
+
+These groups are already defined in `eurosat_splits.csv`. The program does not
+create a new random split. Keep this file and the class order unchanged when
+comparing different models, so they all use the same images and labels.
+
+## How to run the project
+
+Open a terminal in the project folder. Install the required libraries in your
+Python environment:
 
 ```sh
 python -m pip install -r requirements.txt
-python SqueezeNet_EuroSAT.py --data-dir /path/to/EuroSAT
 ```
 
-The data directory must contain `AnnualCrop/`, `Forest/`, and the other class
-folders referenced by the manifest. Omit `--data-dir` to download
-`apollo2506/eurosat-dataset` with KaggleHub. Pretrained ImageNet weights are also
-downloaded on first use. Use `python SqueezeNet_EuroSAT.py --help` for options.
-The entry-point guard and module-level dataset class support Windows workers.
-Use `--num-workers 0` if your environment cannot start worker processes.
+If you already have the images, give the main program the folder containing the
+10 class folders. For example, on Windows:
 
-Defaults preserve the notebook: seed 42, 64x64 RGB images, ImageNet normalization,
-no augmentation, batches of 64, and two data-loader workers. SqueezeNet 1.1 starts
-with pretrained frozen features and a dropout/1x1-convolution/global-pooling
-classifier. Adam trains that head for five epochs at 1e-3. The best validation-loss
-checkpoint then initializes 20 fine-tuning epochs, with feature LR 1e-5 and head
-LR 1e-4. The lowest validation loss across both stages selects the final checkpoint.
-The test split is evaluated once after training. CUDA is selected when available.
-Seeds and deterministic cuDNN settings match the notebook; exact results may
-still vary across hardware and library versions.
+```sh
+python SqueezeNet_EuroSAT.py --data-dir "C:/datasets/EuroSAT"
+```
 
-Outputs default to `squeezenet_results/` (ignored by Git):
+That folder should contain paths such as `AnnualCrop/AnnualCrop_1.jpg` and
+`Forest/Forest_1.jpg`, matching the entries in the CSV.
 
-- Best weights: `squeezenet_best_state.pt`
-- Training history and curves: `training_history.csv`, `training_curves.png`
-- Test results: `classification_report.csv`, `test_predictions.csv`
-- Confusion matrix: `confusion_matrix.csv`, `confusion_matrix.png`
-- Comparison summary: `model_summary.csv`, `model_summary.json`
-- Split provenance: `class_names.json`, `eurosat_splits.csv`, and input SHA-256
-  hashes in the summary
+If you do not have the images, run:
 
-Plots save without a display by default; add `--show-plots` to open plot windows.
-Use a fresh `--output-dir` for each experiment. `--head-epochs` and
-`--fine-tune-epochs` allow shorter smoke runs, but change the experiment settings.
-No notebook output images or reported metrics are copied as fresh training results.
+```sh
+python SqueezeNet_EuroSAT.py
+```
+
+The program uses KaggleHub to download `apollo2506/eurosat-dataset`. It also
+downloads the pretrained model weights on first use, so internet access is needed
+for these downloads. It uses a CUDA GPU when available; otherwise, it uses the CPU.
+
+The default run uses batches of 64 images, a random seed of 42, and 25 training
+rounds in total. A training round is called an **epoch**.
+
+For a shorter trial run with your local images:
+
+```sh
+python SqueezeNet_EuroSAT.py --data-dir "C:/datasets/EuroSAT" --head-epochs 1 --fine-tune-epochs 1 --num-workers 0 --output-dir trial_results
+```
+
+This still uses all the listed images, but trains for only two epochs. Use
+`--num-workers 0` if your computer has trouble starting image-loading workers.
+Choose a different `--output-dir` for each experiment to keep its results separate.
+Run `python SqueezeNet_EuroSAT.py --help` to see all options.
+
+To check the data-handling code separately:
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+These tests do not train the model or download images.
+
+## Where the results go
+
+By default, the program writes its output to `squeezenet_results/`.
+
+| Output file | What it contains |
+| --- | --- |
+| `squeezenet_best_state.pt` | The model weights with the lowest validation loss. Loss measures prediction error; lower is better. |
+| `training_history.csv` | Training and validation loss, accuracy, and time for each epoch. |
+| `training_curves.png` | Graphs showing how loss and accuracy changed during training. |
+| `classification_report.csv` | Performance measures for each class, including precision, recall, and F1 score. |
+| `test_predictions.csv` | Each test image's path, correct label, and predicted label and class name. |
+| `confusion_matrix.csv` and `confusion_matrix.png` | A table and image showing which classes the model predicted correctly or confused with other classes. |
+| `model_summary.csv` and `model_summary.json` | Overall test scores, model size, parameter count, timing, and information identifying the input split files. |
+| `class_names.json` | The class names used in this run. |
+| `eurosat_splits.csv` | A saved copy of the image assignments used in this run. |
+
+Plots are saved automatically. Add `--show-plots` to also display them while the
+program runs.
+
+## How the program flows and how the files call each other
+
+The main script controls the whole training run. It imports functions from
+`eurosat_data.py`; the CSV and JSON files are read as data, not executed as programs.
+
+```mermaid
+flowchart TD
+    A[Run SqueezeNet_EuroSAT.py] --> B[main: parse_args, then train]
+    B --> C[eurosat_data.py: load_splits]
+    C --> D[Read eurosat_splits.csv]
+    C --> E[Read eurosat_classes.json]
+    C --> F[Return checked image rows and class names]
+    F --> G[Main script locates or downloads images]
+    G --> H[eurosat_data.py: validate_images]
+    H --> I[Main script loads batches and trains SqueezeNet]
+    I --> J[Load best weights and evaluate test images]
+    J --> K[Save results in squeezenet_results]
+```
+
+The calls happen in this order:
+
+1. **Start the program.** Running `SqueezeNet_EuroSAT.py` calls `main()`.
+   `main()` calls `parse_args()` to read your command options, then passes those
+   settings to `train(args)`.
+2. **Read and check the image list.** `train()` calls `load_splits()` from
+   `eurosat_data.py`. This function reads the CSV and JSON, checks counts, paths,
+   labels, and class coverage, then returns the image rows and class names.
+3. **Find the actual images.** `train()` uses your `--data-dir` or downloads the
+   dataset. It calls `validate_images()` from `eurosat_data.py` to check that all
+   listed files exist. A missing file stops the run with an error.
+4. **Prepare image batches.** The main script creates three `EuroSATDataset`
+   objects, one for each group. PyTorch's `DataLoader` calls each dataset's
+   `__getitem__()` method to open images, convert them to RGB, resize them to
+   64 by 64 pixels, and scale their values using ImageNet normalization.
+   Training batches are shuffled; validation and test batches keep their order.
+5. **Prepare SqueezeNet.** `train()` loads a model already trained on ImageNet
+   and replaces its final classifier with one that predicts the 10 EuroSAT classes.
+6. **Train the new classifier.** `train()` calls its internal `fit_stage()`
+   function for 5 epochs. Only the new classifier learns during this stage.
+   Each epoch, `fit_stage()` calls `run_epoch()` for training and again for
+   validation. It records progress and saves weights when validation loss improves.
+7. **Fine-tune the full model.** The script reloads the best classifier-stage
+   weights and allows the earlier layers to learn too. It calls `fit_stage()`
+   again for 20 epochs, using smaller learning rates. The best weights are chosen
+   by the lowest validation loss across both stages.
+8. **Evaluate and save.** Still inside `train()`, the script reloads the best
+   weights, evaluates the test images once, and saves predictions, scores,
+   charts, and summary files. The run then finishes.
+
+The test command follows a separate path: Python's `unittest` runner loads
+`tests/test_splits.py`, which imports and calls `load_splits()` and
+`validate_images()` from `eurosat_data.py`. It does not call the training script.
