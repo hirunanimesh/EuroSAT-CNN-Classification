@@ -405,6 +405,134 @@ def train(args):
         optimizer=fine_tune_optimizer
     )
 
+    history_df = pd.DataFrame(history)
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4))
+
+    axes[0].plot(
+        history_df["epoch"],
+        history_df["train_loss"],
+        label="Training"
+    )
+    axes[0].plot(
+        history_df["epoch"],
+        history_df["val_loss"],
+        label="Validation"
+    )
+    axes[0].set_title("SqueezeNet loss")
+    axes[0].set_ylabel("Cross-entropy loss")
+
+    axes[1].plot(
+        history_df["epoch"],
+        history_df["train_accuracy"],
+        label="Training"
+    )
+    axes[1].plot(
+        history_df["epoch"],
+        history_df["val_accuracy"],
+        label="Validation"
+    )
+    axes[1].set_title("SqueezeNet accuracy")
+    axes[1].set_ylabel("Accuracy")
+
+    for ax in axes:
+        ax.axvline(
+            args.head_epochs + 0.5,
+            color="gray",
+            linestyle="--",
+            label="Fine-tuning begins"
+        )
+        ax.set_xlabel("Epoch")
+        ax.legend()
+        ax.grid(alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(
+        OUTPUT_DIR / "training_curves.png",
+        dpi=200,
+        bbox_inches="tight"
+    )
+    if args.show_plots:
+        plt.show()
+    else:
+        plt.close(fig)
+
+    best_row = history_df.loc[
+        history_df["val_loss"].idxmin()
+    ]
+
+    print("Selected checkpoint:")
+    print(best_row[["epoch", "stage", "val_loss", "val_accuracy"]])
+    model.load_state_dict(
+        torch.load(
+            BEST_PATH,
+            map_location=device,
+            weights_only=True
+        )
+    )
+    model.eval()
+
+    y_true = []
+    y_pred = []
+    test_loss_sum = 0.0
+
+    with torch.no_grad():
+        for images, labels in tqdm(
+            test_loader,
+            desc="Test evaluation"
+        ):
+            images = images.to(device, non_blocking=True)
+            labels = labels.to(device, non_blocking=True)
+
+            logits = model(images)
+            loss = criterion(logits, labels)
+            predictions = logits.argmax(dim=1)
+
+            test_loss_sum += loss.item() * labels.size(0)
+
+            y_true.extend(labels.cpu().tolist())
+            y_pred.extend(predictions.cpu().tolist())
+
+    test_accuracy = accuracy_score(y_true, y_pred)
+    test_loss = test_loss_sum / len(test_dataset)
+
+    report = classification_report(
+        y_true,
+        y_pred,
+        labels=list(range(NUM_CLASSES)),
+        target_names=class_names,
+        output_dict=True,
+        zero_division=0
+    )
+
+    print(f"Test loss: {test_loss:.4f}")
+    print(f"Test accuracy: {test_accuracy * 100:.2f}%")
+
+    print(classification_report(
+        y_true,
+        y_pred,
+        labels=list(range(NUM_CLASSES)),
+        target_names=class_names,
+        digits=4,
+        zero_division=0
+    ))
+
+    pd.DataFrame(report).transpose().to_csv(
+        OUTPUT_DIR / "classification_report.csv"
+    )
+
+    # Save predictions with the corresponding image paths.
+    predictions_df = test_dataset.frame.copy()
+    predictions_df["predicted_label"] = y_pred
+    predictions_df["predicted_class"] = [
+        class_names[label] for label in y_pred
+    ]
+
+    predictions_df.to_csv(
+        OUTPUT_DIR / "test_predictions.csv",
+        index=False
+    )
+
 
 def main():
     train(parse_args())
