@@ -358,6 +358,17 @@ def train(args):
                 f"{elapsed:.1f}s"
             )
 
+    head_optimizer = torch.optim.Adam(
+        model.classifier.parameters(),
+        lr=1e-3
+    )
+
+    fit_stage(
+        stage_name="classifier_training",
+        epochs=args.head_epochs,
+        optimizer=head_optimizer
+    )
+
 
 def main():
     train(parse_args())
